@@ -1,5 +1,10 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+#include "SoftwareSerial.h"
+#include "DFRobotDFPlayerMini.h"
+
 
 WiFiServer server(80);
 const char *ssid = "ADT";
@@ -13,11 +18,28 @@ const int lamp3Pin = 5;
 const int lamp4Pin = 18;
 const int lamp5Pin = 19;
 
+// Initialize software serial on pins 16 and 17
+SoftwareSerial mySoftwareSerial(16, 17);  // RX, TX
+DFRobotDFPlayerMini myDFPlayer;
+String line;
+char command;
+bool trackPlaying = false;
+
+
 unsigned long previousMillis = 0;
 const long interval = 100; // Adjust the interval based on your needs
 
+// Create the Player object
+DFRobotDFPlayerMini player;
+
 void setup() {
+
+ // Serial communication with the module
+  mySoftwareSerial.begin(9600);
+
   Serial.begin(115200);
+
+
   pinMode(lamp1Pin, OUTPUT);
   pinMode(lamp2Pin, OUTPUT);
   pinMode(lamp3Pin, OUTPUT);
@@ -29,12 +51,117 @@ void setup() {
 
   // Start server
   server.begin();
+
+  //Serial communication with the module
+  mySoftwareSerial.begin(9600);
+  // Initialize Arduino serial
+  Serial.begin(115200);
+  // Check if the module is responding and if the SD card is found
+  Serial.println();
+  Serial.println(F("DFRobot DFPlayer Mini"));
+  Serial.println(F("Initializing DFPlayer module ... Wait!"));
+
+  if (!myDFPlayer.begin(mySoftwareSerial)) {
+    Serial.println(F("Not initialized:"));
+    Serial.println(F("1. Check the DFPlayer Mini connections"));
+    Serial.println(F("2. Insert an SD card"));
+    while (true)
+      ;
+  }
+  Serial.println();
+  Serial.println(F("DFPlayer Mini module initialized!"));
+  // Initial settings
+  myDFPlayer.setTimeOut(500);  // Serial timeout 500ms
+  myDFPlayer.volume(25);        // Volume 5
+  myDFPlayer.EQ(0);            // Normal equalization
+
+  menu_options();
+
+
+
 }
 
 void loop() {
+
   handleWiFiClientRequests();
   handlePinData();
+  fetchEmergencyLevelOverWiFi();
   // handleEmergencyLamps();
+
+
+  // Waits for data entry via serial
+  while (Serial.available() > 0) {
+    command = Serial.read();
+
+    // Play from first 9 files
+    if ((command >= '1') && (command <= '5')) {
+      Serial.print("Music reproduction: ");
+      Serial.println(command);
+      command = command - '0';
+      myDFPlayer.play(command);
+       myDFPlayer.enableLoop();
+      trackPlaying = true;
+      menu_options();
+    }
+
+    // // Toggle repeat mode
+    // if (command == 'r') {
+    //   myDFPlayer.enableLoop();
+    //   Serial.println("Repeat mode enabled.");
+    // }
+
+    // Pause or resume
+    if (command == 'p') {
+      if (trackPlaying) {
+        myDFPlayer.pause();
+        trackPlaying = false;
+        Serial.println("Paused. Press 'p' again to resume or select another track.");
+      } else {
+        myDFPlayer.start();
+        trackPlaying = true;
+        Serial.println("Resumed.");
+      }
+      menu_options();
+    }
+
+    // Set volume
+    if (command == 'v') {
+      if (Serial.available() > 0) {
+        int myVolume = Serial.parseInt();
+        if (myVolume >= 0 && myVolume <= 30) {
+          myDFPlayer.volume(myVolume);
+          Serial.print("Current Volume: ");
+          Serial.println(myDFPlayer.readVolume());
+        } else {
+          Serial.println("Invalid volume level, choose a number between 0-30.");
+        }
+      }
+      menu_options();
+    }
+
+    // Increases volume
+    if (command == '+') {
+      myDFPlayer.volumeUp();
+      Serial.print("Current Volume: ");
+      Serial.println(myDFPlayer.readVolume());
+      menu_options();
+    }
+
+    // Decreases volume
+    if (command == '-') {
+      myDFPlayer.volumeDown();
+      Serial.print("Current Volume: ");
+      Serial.println(myDFPlayer.readVolume());
+      menu_options();
+    }
+  }
+
+  // Check if the track is still playing and restart if it's not
+  if (trackPlaying && !myDFPlayer.available()) {
+    myDFPlayer.play();
+  }
+
+ 
 }
 
 void blinkLamp(int lampPin, int blinkDelay) {
@@ -179,6 +306,8 @@ void handleEmergencyLamps(int emergencyLevel) {
       if (currentMillis - previousMillis >= interval) {
         previousMillis = currentMillis;
         blinkLamp(lamp1Pin, 750); // Blink every 750 milliseconds
+        myDFPlayer.play(emergencyLevel);
+        myDFPlayer.enableLoop();
       }
       break;
     case 2:
@@ -186,6 +315,8 @@ void handleEmergencyLamps(int emergencyLevel) {
       if (currentMillis - previousMillis >= interval / 2) {
         previousMillis = currentMillis;
         blinkLamp(lamp2Pin, 600); // Blink every 600 milliseconds
+        myDFPlayer.play(emergencyLevel);
+        myDFPlayer.enableLoop();
       }
       break;
     case 3:
@@ -193,6 +324,8 @@ void handleEmergencyLamps(int emergencyLevel) {
       if (currentMillis - previousMillis >= interval / 4) {
         previousMillis = currentMillis;
         blinkLamp(lamp3Pin, 450); // Blink every 450 milliseconds
+        myDFPlayer.play(emergencyLevel);
+        myDFPlayer.enableLoop();
       }
       break;
     case 4:
@@ -200,6 +333,8 @@ void handleEmergencyLamps(int emergencyLevel) {
       if (currentMillis - previousMillis >= interval / 8) {
         previousMillis = currentMillis;
         blinkLamp(lamp4Pin, 300); // Blink every 300 milliseconds
+        myDFPlayer.play(emergencyLevel);
+        myDFPlayer.enableLoop();
       }
       break;
     case 5:
@@ -207,6 +342,8 @@ void handleEmergencyLamps(int emergencyLevel) {
       if (currentMillis - previousMillis >= interval / 16) {
         previousMillis = currentMillis;
         blinkLamp(lamp5Pin, 150); // Blink every 150 milliseconds
+        myDFPlayer.play(emergencyLevel);
+        myDFPlayer.enableLoop();
       }
       break;
     default:
@@ -218,4 +355,16 @@ void handleEmergencyLamps(int emergencyLevel) {
       digitalWrite(lamp5Pin, LOW);
       break;
   }
+}
+void menu_options() {
+  Serial.println();
+  Serial.println(F("=================================================================================================================================="));
+  Serial.println(F("Commands:"));
+  Serial.println(F(" [1-5] To select the MP3 file"));
+  Serial.println(F(" [p] pause/resume"));
+  Serial.println(F(" [vX] set volume to X"));
+  Serial.println(F(" [+ or -] increases or decreases the volume"));
+  Serial.println(F(" [r] enable repeat mode"));
+  Serial.println();
+  Serial.println(F("================================================================================================================================="));
 }
